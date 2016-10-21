@@ -1,0 +1,3 @@
+*.o
+*.elf
+Debug/STM32L083CZ.map

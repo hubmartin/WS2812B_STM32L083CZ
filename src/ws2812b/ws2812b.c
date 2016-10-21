@@ -211,6 +211,9 @@ static void WS2812_sendbuf()
 	// Set zero length for first pulse because the first bit loads after first TIM_UP
 	TIM2->CCR1 = 0;
 
+//	(&Tim2Handle)->Instance->CCMR1 &= ~((1 << 4) | (1 << 5));
+	(&Tim2Handle)->Instance->CCMR1 |= (1 << 5);
+
 	__HAL_DBGMCU_FREEZE_TIM2();
 
 	// start TIM2
@@ -238,6 +241,10 @@ void DMA_TransferHalfHandler(DMA_HandleTypeDef *DmaHandle)
 		}
 
 	} else {
+
+		//HAL_TIM_PWM_ConfigChannel()
+
+
 		// If this is the last pixel, set the next pixel value to zeros, because
 		// the DMA would not stop exactly at the last bit.
 		ws2812b_set_pixel(0, 0, 0, 0, 0);
@@ -260,6 +267,10 @@ void DMA_TransferCompleteHandler(DMA_HandleTypeDef *DmaHandle)
 	{
 		// Transfer of all LEDs is done, disable DMA but enable tiemr update IRQ to stop the 50us pulse
 		ws2812b.repeatCounter = 0;
+
+		// Disable PWM output
+		(&Tim2Handle)->Instance->CCMR1 &= ~((1 << 4) | (1 << 5));
+		(&Tim2Handle)->Instance->CCMR1 |= (1 << 6);
 
 		// Enable TIM2 Update interrupt for 50us Treset signal
 		__HAL_TIM_ENABLE_IT(&Tim2Handle, TIM_IT_UPDATE);
@@ -293,6 +304,11 @@ void TIM2_IRQHandler(void)
 // TIM2 Interrupt Handler gets executed on every TIM2 Update if enabled
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+
+#if defined(LED5_PORT)
+		LED5_PORT->BSRR = LED5_PIN;
+	#endif
+
 	// I have to wait 50us to generate Treset signal
 	if (ws2812b.timerPeriodCounter < (uint8_t)WS2812_RESET_PERIOD)
 	{
@@ -310,6 +326,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		// set TransferComplete flag
 		ws2812b.transferComplete = 1;
 	}
+
+#if defined(LED5_PORT)
+		LED5_PORT->BRR = LED5_PIN;
+	#endif
 
 }
 

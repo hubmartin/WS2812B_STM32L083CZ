@@ -111,8 +111,8 @@ void visHandle2()
 	{
 		timestamp = HAL_GetTick();
 
-		visRainbow(frameBuffer, sizeof(frameBuffer), 15);
-		//visDots(frameBuffer2, sizeof(frameBuffer2), 50, 40);
+		//visRainbow(frameBuffer, sizeof(frameBuffer), 15);
+		visDots(frameBuffer, sizeof(frameBuffer), 50, 40);
 /*
 		switch(visSelect)
 		{
@@ -155,6 +155,8 @@ void visHandle()
 	{
 		// Update your framebuffer here or swap buffers
 		visHandle2();
+
+		//HAL_Delay(2);
 
 		// Signal that buffer is changed and transfer new data
 		ws2812b.startTransfer = 1;

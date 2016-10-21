@@ -52,7 +52,7 @@ void ws2812b_handle();
 // Library structures
 // ******************
 // This value sets number of periods to generate 50uS Treset signal
-#define WS2812_RESET_PERIOD 12
+#define WS2812_RESET_PERIOD 100
 
 typedef struct WS2812_BufferItem {
 	uint8_t* frameBufferPointer;
