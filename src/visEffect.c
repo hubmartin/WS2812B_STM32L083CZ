@@ -46,7 +46,7 @@ uint32_t Wheel(uint8_t WheelPos) {
 
 
 
-void visRainbow(uint8_t *frameBuffer, uint32_t frameBufferSize, uint32_t effectLength)
+void visRainbow(uint8_t *frameBuffer, uint32_t frame_buffer_size, uint32_t effectLength)
 {
 	uint32_t i;
 	static uint8_t x = 0;
@@ -56,7 +56,7 @@ void visRainbow(uint8_t *frameBuffer, uint32_t frameBufferSize, uint32_t effectL
 	if(x == 256*5)
 		x = 0;
 
-	for( i = 0; i < frameBufferSize / 3; i++)
+	for( i = 0; i < frame_buffer_size / 3; i++)
 	{
 		uint32_t color = Wheel(((i * 256) / effectLength + x) & 0xFF);
 
@@ -67,11 +67,11 @@ void visRainbow(uint8_t *frameBuffer, uint32_t frameBufferSize, uint32_t effectL
 }
 
 
-void visDots(uint8_t *frameBuffer, uint32_t frameBufferSize, uint32_t random, uint32_t fadeOutFactor)
+void visDots(uint8_t *frameBuffer, uint32_t frame_buffer_size, uint32_t random, uint32_t fadeOutFactor)
 {
 	uint32_t i;
 
-	for( i = 0; i < frameBufferSize / 3; i++)
+	for( i = 0; i < frame_buffer_size / 3; i++)
 	{
 
 		if(rand() % random == 0)
@@ -135,14 +135,14 @@ void visInit()
 	// Set output channel/pin, GPIO_PIN_0 = 0, for GPIO_PIN_5 = 5 - this has to correspond to WS2812B_PINS
 	ws2812b.item[0].channel = 0;
 	// Your RGB framebuffer
-	ws2812b.item[0].frameBufferPointer = frameBuffer;
+	ws2812b.item[0].frame_buffer_pointer = frameBuffer;
 	// RAW size of framebuffer
-	ws2812b.item[0].frameBufferSize = sizeof(frameBuffer);
+	ws2812b.item[0].frame_buffer_size = sizeof(frameBuffer);
 
 	// If you need more parallel LED strips, increase the WS2812_BUFFER_COUNT value
 	//ws2812b.item[1].channel = 1;
-	//ws2812b.item[1].frameBufferPointer = frameBuffer2;
-	//ws2812b.item[1].frameBufferSize = sizeof(frameBuffer2);
+	//ws2812b.item[1].frame_buffer_pointer = frameBuffer2;
+	//ws2812b.item[1].frame_buffer_size = sizeof(frameBuffer2);
 
 	ws2812b_init();
 }
@@ -151,7 +151,7 @@ void visInit()
 void visHandle()
 {
 
-	if(ws2812b.transferComplete)
+	if(ws2812b.transfer_complete)
 	{
 		// Update your framebuffer here or swap buffers
 		visHandle2();
@@ -159,7 +159,7 @@ void visHandle()
 		//HAL_Delay(2);
 
 		// Signal that buffer is changed and transfer new data
-		ws2812b.startTransfer = 1;
+		ws2812b.start_transfer = 1;
 		ws2812b_handle();
 	}
 }

@@ -31,7 +31,7 @@
 // *******************************************************
 //#define SETPIX_1	// For loop, works everywhere, slow
 //#define SETPIX_2	// Optimized unrolled loop
-#define SETPIX_3
+#define SETPIX_3	// Unrolled loop plus some pointer increment optimization
 //#define SETPIX_4
 
 
@@ -54,40 +54,25 @@ void ws2812b_handle();
 // This value sets number of periods to generate 50uS Treset signal
 #define WS2812_RESET_PERIOD 100
 
-typedef struct WS2812_BufferItem {
-	uint8_t* frameBufferPointer;
-	uint32_t frameBufferSize;
-	uint32_t frameBufferCounter;
+typedef struct ws2812b_buffer_item_t {
+	uint8_t* frame_buffer_pointer;
+	uint32_t frame_buffer_size;
+	uint32_t frame_buffer_counter;
 	uint8_t channel;	// digital output pin/channel
-} WS2812_BufferItem;
+} ws2812b_buffer_item_t;
 
 
 
-typedef struct WS2812_Struct
+typedef struct ws2812b_t
 {
-	WS2812_BufferItem item[WS2812_BUFFER_COUNT];
-	uint8_t transferComplete;
-	uint8_t startTransfer;
-	uint32_t timerPeriodCounter;
-	uint32_t repeatCounter;
-} WS2812_Struct;
+	ws2812b_buffer_item_t item[WS2812_BUFFER_COUNT];
+	uint8_t transfer_complete;
+	uint8_t start_transfer;
+	uint32_t timer_period_counter;
+	uint32_t repeat_counter;
+} ws2812b_t;
 
-WS2812_Struct ws2812b;
+ws2812b_t ws2812b;
 
-// Bit band stuff
-#define RAM_BASE 0x20000000
-#define RAM_BB_BASE 0x22000000
-#define Var_ResetBit_BB(VarAddr, BitNumber) (*(volatile uint32_t *) (RAM_BB_BASE | ((VarAddr - RAM_BASE) << 5) | ((BitNumber) << 2)) = 0)
-#define Var_SetBit_BB(VarAddr, BitNumber) (*(volatile uint32_t *) (RAM_BB_BASE | ((VarAddr - RAM_BASE) << 5) | ((BitNumber) << 2)) = 1)
-#define Var_GetBit_BB(VarAddr, BitNumber) (*(volatile uint32_t *) (RAM_BB_BASE | ((VarAddr - RAM_BASE) << 5) | ((BitNumber) << 2)))
-#define BITBAND_SRAM(address, bit) ( (__IO uint32_t *) (RAM_BB_BASE + (((uint32_t)address) - RAM_BASE) * 32 + (bit) * 4))
-
-#define varSetBit(var,bit) (Var_SetBit_BB((uint32_t)&var,bit))
-#define varResetBit(var,bit) (Var_ResetBit_BB((uint32_t)&var,bit))
-#define varGetBit(var,bit) (Var_GetBit_BB((uint32_t)&var,bit))
-
-static void ws2812b_set_pixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue);
-void DMA_TransferCompleteHandler(DMA_HandleTypeDef *DmaHandle);
-void DMA_TransferHalfHandler(DMA_HandleTypeDef *DmaHandle);
 
 #endif /* WS2812B_H_ */
