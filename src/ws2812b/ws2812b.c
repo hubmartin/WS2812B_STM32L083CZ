@@ -178,7 +178,19 @@ static void dma_init(void)
 	HAL_NVIC_SetPriority(DMA1_Channel2_3_IRQn, 0, 0);
 	HAL_NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
 	//HAL_DMA_Start_IT(&dmaUpdate, (uint32_t)timDmaTest, (uint32_t)&(&Tim2Handle)->Instance->DMAR, 4);
-	HAL_DMA_Start_IT(&dmaUpdate, (uint32_t)dma_bit_buffer, (uint32_t)&TIM2->CCR1, BUFFER_SIZE);
+	HAL_DMA_Start_IT(&dmaUpdate, (uint32_t)dma_bit_buffer, (uint32_t)&TIM2->
+#if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
+			CCR1
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_2)
+			CCR2
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_3)
+			CCR3
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_4)
+			CCR4
+#else
+#error
+#endif
+			, BUFFER_SIZE);
 
 }
 
@@ -251,7 +263,19 @@ static void ws2812b_send()
 	TIM2->CNT = timer_period - 1;
 
 	// Set zero length for first pulse because the first bit loads after first TIM_UP
-	TIM2->CCR1 = 0;
+	TIM2->
+#if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
+			CCR1
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_2)
+			CCR2
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_3)
+			CCR3
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_4)
+			CCR4
+#else
+#error
+#endif
+			= 0;
 
 	// Enable PWM
 #if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
