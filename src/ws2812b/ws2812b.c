@@ -5,8 +5,8 @@
   Date: 28.9.2016
 
   Author: Martin Hubacek
-  	  	  http://www.martinhubacek.cz
-  	  	  @hubmartin
+          http://www.martinhubacek.cz
+          @hubmartin
 
   Licence: MIT License
 
@@ -14,18 +14,22 @@
 
 #include <string.h>
 
-#include "stm32L0xx_hal.h"
+#include "stm32l0xx_hal.h"
 #include "ws2812b.h"
 
-//extern ws2812_t ws2812b;
+ws2812b_t ws2812b;
 
-// WS2812 framebuffer - buffer for 2 LEDs - two times 24 bits
-uint8_t dma_bit_buffer[24 * 2];
+static uint8_t dma_bit_buffer[
+#ifdef WS2812B_HAS_WHITE
+							  32
+#else
+							  24
+#endif
+							  * 2];
 #define BUFFER_SIZE		(sizeof(dma_bit_buffer)/sizeof(uint8_t))
 
-TIM_HandleTypeDef  timer2_handle;
-TIM_OC_InitTypeDef timer2_oc1;
-TIM_OC_InitTypeDef timer2_oc2;
+static TIM_HandleTypeDef  timer2_handle;
+static TIM_OC_InitTypeDef timer2_oc;
 
 static uint32_t timer_period;
 static uint8_t compare_pulse_logic_0;
@@ -34,9 +38,14 @@ static uint8_t compare_pulse_logic_1;
 
 void dma_transfer_complete_handler(DMA_HandleTypeDef *dma_handle);
 void dma_transfer_half_handler(DMA_HandleTypeDef *dma_handle);
-static void ws2812b_set_pixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue);
+static void ws2812b_set_pixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue
+#ifdef WS2812B_HAS_WHITE
+		, uint8_t white
+#endif
+		);
 
 
+#ifdef WS2812B_USE_GAMMA_CORRECTION
 // Gamma correction table
 const uint8_t gammaTable[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -56,6 +65,7 @@ const uint8_t gammaTable[] = {
   177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
   215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255
 };
+#endif
 
 static void ws2812b_gpio_init(void)
 {
@@ -69,7 +79,7 @@ static void ws2812b_gpio_init(void)
 	GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(WS2812B_PORT, &GPIO_InitStruct);
 
-	// Enable output pins for debuging to see DMA Full and Half transfer interrupts
+	// Enable output pins for debugging to see DMA Full and Half transfer interrupts
 	#if defined(LED4_PORT) && defined(LED5_PORT)
 		GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 		GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -113,15 +123,27 @@ static void tim2_init(void)
 	HAL_NVIC_SetPriority(TIM2_IRQn, 0, 0);
 	HAL_NVIC_EnableIRQ(TIM2_IRQn);
 
-	timer2_oc1.OCMode       = TIM_OCMODE_PWM1;
-	timer2_oc1.OCPolarity   = TIM_OCPOLARITY_HIGH;
-	timer2_oc1.Pulse        = compare_pulse_logic_0;
-	timer2_oc1.OCFastMode   = TIM_OCFAST_DISABLE;
-	HAL_TIM_PWM_ConfigChannel(&timer2_handle, &timer2_oc1, TIM_CHANNEL_1);
+	timer2_oc.OCMode       = TIM_OCMODE_PWM1;
+	timer2_oc.OCPolarity   = TIM_OCPOLARITY_HIGH;
+	timer2_oc.Pulse        = compare_pulse_logic_0;
+	timer2_oc.OCFastMode   = TIM_OCFAST_DISABLE;
+	HAL_TIM_PWM_ConfigChannel(&timer2_handle, &timer2_oc, WS2812B_TIM_CHAN);
 
-	HAL_TIM_PWM_Start(&timer2_handle, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&timer2_handle, WS2812B_TIM_CHAN);
 
-	(&timer2_handle)->Instance->DCR = TIM_DMABASE_CCR1 | TIM_DMABURSTLENGTH_1TRANSFER;
+	(&timer2_handle)->Instance->DCR =
+#if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
+			TIM_DMABASE_CCR1
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_2)
+			TIM_DMABASE_CCR2
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_3)
+			TIM_DMABASE_CCR3
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_4)
+			TIM_DMABASE_CCR4
+#else
+#error
+#endif
+			| TIM_DMABURSTLENGTH_1TRANSFER;
 
 }
 
@@ -156,7 +178,19 @@ static void dma_init(void)
 	HAL_NVIC_SetPriority(DMA1_Channel2_3_IRQn, 0, 0);
 	HAL_NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
 	//HAL_DMA_Start_IT(&dmaUpdate, (uint32_t)timDmaTest, (uint32_t)&(&Tim2Handle)->Instance->DMAR, 4);
-	HAL_DMA_Start_IT(&dmaUpdate, (uint32_t)dma_bit_buffer, (uint32_t)&TIM2->CCR1, BUFFER_SIZE);
+	HAL_DMA_Start_IT(&dmaUpdate, (uint32_t)dma_bit_buffer, (uint32_t)&TIM2->
+#if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
+			CCR1
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_2)
+			CCR2
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_3)
+			CCR3
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_4)
+			CCR4
+#else
+#error
+#endif
+			, BUFFER_SIZE);
 
 }
 
@@ -176,11 +210,18 @@ static void load_next_framebuffer_data(ws2812b_buffer_item_t *buffer_item, uint3
 	uint32_t r = buffer_item->frame_buffer_pointer[buffer_item->frame_buffer_counter++];
 	uint32_t g = buffer_item->frame_buffer_pointer[buffer_item->frame_buffer_counter++];
 	uint32_t b = buffer_item->frame_buffer_pointer[buffer_item->frame_buffer_counter++];
+#ifdef WS2812B_HAS_WHITE
+	uint32_t w = buffer_item->frame_buffer_pointer[buffer_item->frame_buffer_counter++];
+#endif
 
 	if(buffer_item->frame_buffer_counter == buffer_item->frame_buffer_size)
 		buffer_item->frame_buffer_counter = 0;
 
-	ws2812b_set_pixel(buffer_item->channel, row, r, g, b);
+	ws2812b_set_pixel(buffer_item->channel, row, r, g, b
+#ifdef WS2812B_HAS_WHITE
+			, w
+#endif
+			);
 }
 
 
@@ -196,8 +237,8 @@ static void ws2812b_send()
 	{
 		ws2812b.item[i].frame_buffer_counter = 0;
 
-		load_next_framebuffer_data(&ws2812b.item[i], 0); // ROW 0
-		load_next_framebuffer_data(&ws2812b.item[i], 1); // ROW 0
+		load_next_framebuffer_data(&ws2812b.item[i], 0);
+		load_next_framebuffer_data(&ws2812b.item[i], 1);
 	}
 
 	HAL_TIM_Base_Stop(&timer2_handle);
@@ -219,14 +260,39 @@ static void ws2812b_send()
 	// IMPORTANT: enable the TIM2 DMA requests AFTER enabling the DMA channels!
 	__HAL_TIM_ENABLE_DMA(&timer2_handle, TIM_DMA_UPDATE);
 
-	TIM2->CNT = timer_period-1;
+	TIM2->CNT = timer_period - 1;
 
 	// Set zero length for first pulse because the first bit loads after first TIM_UP
-	TIM2->CCR1 = 0;
+	TIM2->
+#if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
+			CCR1
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_2)
+			CCR2
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_3)
+			CCR3
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_4)
+			CCR4
+#else
+#error
+#endif
+			= 0;
 
 	// Enable PWM
-	//(&timer2_handle)->Instance->CCMR1 &= ~((1 << 4) | (1 << 5));
-	(&timer2_handle)->Instance->CCMR1 |= (1 << 5);
+#if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
+	//(&timer2_handle)->Instance->CCMR1 &= ~(TIM_CCMR1_OC1M_0 | TIM_CCMR1_OC1M_1);
+	(&timer2_handle)->Instance->CCMR1 |= TIM_CCMR1_OC1M_1;
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_2)
+	//(&timer2_handle)->Instance->CCMR1 &= ~(TIM_CCMR1_OC2M_0 | TIM_CCMR1_OC2M_1);
+	(&timer2_handle)->Instance->CCMR1 |= TIM_CCMR1_OC2M_1;
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_3)
+	//(&timer2_handle)->Instance->CCMR2 &= ~(TIM_CCMR2_OC3M_0 | TIM_CCMR2_OC3M_1);
+	(&timer2_handle)->Instance->CCMR2 |= TIM_CCMR2_OC3M_1;
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_4)
+	//(&timer2_handle)->Instance->CCMR2 &= ~(TIM_CCMR2_OC4M_0 | TIM_CCMR2_OC4M_1);
+	(&timer2_handle)->Instance->CCMR2 |= TIM_CCMR2_OC4M_1;
+#else
+#error
+#endif
 
 	__HAL_DBGMCU_FREEZE_TIM2();
 
@@ -261,7 +327,11 @@ void dma_transfer_half_handler(DMA_HandleTypeDef *dma_handle)
 
 		// If this is the last pixel, set the next pixel value to zeros, because
 		// the DMA would not stop exactly at the last bit.
-		ws2812b_set_pixel(0, 0, 0, 0, 0);
+		ws2812b_set_pixel(0, 0, 0, 0, 0
+#ifdef WS2812B_HAS_WHITE
+				, 0
+#endif
+				);
 	}
 
 	#if defined(LED4_PORT)
@@ -283,10 +353,21 @@ void dma_transfer_complete_handler(DMA_HandleTypeDef *dma_handle)
 		ws2812b.repeat_counter = 0;
 
 		// Disable PWM output
-		(&timer2_handle)->Instance->CCMR1 &= ~((1 << 4) | (1 << 5));
-		(&timer2_handle)->Instance->CCMR1 |= (1 << 6);
-
-
+#if (WS2812B_TIM_CHAN == TIM_CHANNEL_1)
+		(&timer2_handle)->Instance->CCMR1 &= ~(TIM_CCMR1_OC1M_0 | TIM_CCMR1_OC1M_1);
+		(&timer2_handle)->Instance->CCMR1 |= TIM_CCMR1_OC1M_2;
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_2)
+		(&timer2_handle)->Instance->CCMR1 &= ~(TIM_CCMR1_OC2M_0 | TIM_CCMR1_OC2M_1);
+		(&timer2_handle)->Instance->CCMR1 |= TIM_CCMR1_OC2M_2;
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_3)
+		(&timer2_handle)->Instance->CCMR2 &= ~(TIM_CCMR2_OC3M_0 | TIM_CCMR2_OC3M_1);
+		(&timer2_handle)->Instance->CCMR2 |= TIM_CCMR2_OC3M_2;
+#elif (WS2812B_TIM_CHAN == TIM_CHANNEL_4)
+		(&timer2_handle)->Instance->CCMR2 &= ~(TIM_CCMR2_OC4M_0 | TIM_CCMR2_OC4M_1);
+		(&timer2_handle)->Instance->CCMR2 |= TIM_CCMR2_OC4M_2;
+#else
+#error
+#endif
 
 		// Enable TIM2 Update interrupt for 50us Treset signal
 		__HAL_TIM_ENABLE_IT(&timer2_handle, TIM_IT_UPDATE);
@@ -351,15 +432,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 
 
-static void ws2812b_set_pixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue)
+static void ws2812b_set_pixel(uint8_t row, uint16_t column, uint8_t red, uint8_t green, uint8_t blue
+#ifdef WS2812B_HAS_WHITE
+		, uint8_t white
+#endif
+		)
 {
-
+#ifdef WS2812B_USE_GAMMA_CORRECTION
 	// Apply gamma
 	red = gammaTable[red];
 	green = gammaTable[green];
 	blue = gammaTable[blue];
+#endif
 
-	uint32_t calculated_column = (column * 24);
+	uint32_t calculated_column = (column *
+#ifdef WS2812B_HAS_WHITE
+			32
+#else
+			24
+#endif
+			);
 
 #if defined(SETPIX_1)
 
@@ -370,51 +462,76 @@ static void ws2812b_set_pixel(uint8_t row, uint16_t column, uint8_t red, uint8_t
 		dma_bit_buffer[(calculated_column+i)] = (((((green)<<i) & 0x80)>>7)<<row) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+8+i)] = (((((red)<<i) & 0x80)>>7)<<row) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+i)] = (((((blue)<<i) & 0x80)>>7)<<row) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+i)] = (((((white)<<i) & 0x80)>>7)<<row) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 	}
 
 #elif defined(SETPIX_2)
 
-
-
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+0)] = (((green)<<0) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+0)] = (((red)<<0) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+0)] = (((green)<<0) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+0)] = (((red)<<0) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+0)] = (((blue)<<0) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+0)] = (((white)<<0) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+1)] = (((green)<<1) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+1)] = (((red)<<1) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+1)] = (((green)<<1) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+1)] = (((red)<<1) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+1)] = (((blue)<<1) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+1)] = (((white)<<1) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+2)] = (((green)<<2) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+2)] = (((red)<<2) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+2)] = (((green)<<2) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+2)] = (((red)<<2) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+2)] = (((blue)<<2) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+2)] = (((white)<<2) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+3)] = (((green)<<3) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+3)] = (((red)<<3) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+3)] = (((green)<<3) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+3)] = (((red)<<3) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+3)] = (((blue)<<3) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+3)] = (((white)<<3) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+4)] = (((green)<<4) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+4)] = (((red)<<4) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+4)] = (((green)<<4) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+4)] = (((red)<<4) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+4)] = (((blue)<<4) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+4)] = (((white)<<4) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+5)] = (((green)<<5) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+5)] = (((red)<<5) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+5)] = (((green)<<5) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+5)] = (((red)<<5) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+5)] = (((blue)<<5) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+5)] = (((white)<<5) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+6)] = (((green)<<6) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+6)] = (((red)<<6) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+6)] = (((green)<<6) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+6)] = (((red)<<6) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+6)] = (((blue)<<6) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+6)] = (((white)<<6) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 		// write new data for pixel
-		dma_bit_buffer[(calculated_column+7)] = (((green)<<7) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
-		dma_bit_buffer[(calculated_column+8+7)] = (((red)<<7) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 0+7)] = (((green)<<7) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		dma_bit_buffer[(calculated_column+ 8+7)] = (((red)<<7) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		dma_bit_buffer[(calculated_column+16+7)] = (((blue)<<7) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#ifdef WS2812B_HAS_WHITE
+		dma_bit_buffer[(calculated_column+24+7)] = (((white)<<7) & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 #elif defined(SETPIX_3)
 
@@ -447,6 +564,17 @@ static void ws2812b_set_pixel(uint8_t row, uint16_t column, uint8_t red, uint8_t
 		*bit_buffer_offset++ = (blue & 0x04) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		*bit_buffer_offset++ = (blue & 0x02) ? compare_pulse_logic_1 : compare_pulse_logic_0;
 		*bit_buffer_offset++ = (blue & 0x01) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+
+#ifdef WS2812B_HAS_WHITE
+		*bit_buffer_offset++ = (white & 0x80) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		*bit_buffer_offset++ = (white & 0x40) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		*bit_buffer_offset++ = (white & 0x20) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		*bit_buffer_offset++ = (white & 0x10) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		*bit_buffer_offset++ = (white & 0x08) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		*bit_buffer_offset++ = (white & 0x04) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		*bit_buffer_offset++ = (white & 0x02) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+		*bit_buffer_offset++ = (white & 0x01) ? compare_pulse_logic_1 : compare_pulse_logic_0;
+#endif
 
 #endif
 }
